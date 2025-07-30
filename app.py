@@ -1,66 +1,30 @@
-import pandas as pd
 import streamlit as st
-from sklearn.preprocessing import LabelEncoder
-from sklearn.tree import DecisionTreeClassifier, plot_tree
-import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+# Load Data
+books = pd.read_csv("books.csv")
+ratings = pd.read_csv("ratings.csv")  # Add your ratings.csv here
 
-data = {
+# --- Collaborative Filtering Preprocessing ---
+user_item_matrix = ratings.pivot_table(index='User_ID', columns='Book_ID', values='Rating').fillna(0)
+user_similarity = cosine_similarity(user_item_matrix)
+user_similarity_df = pd.DataFrame(user_similarity, index=user_item_matrix.index, columns=user_item_matrix.index)
 
-    'Weather': ['Sunny', 'Rainy', 'Overcast', 'Sunny', 'Rainy', 'Sunny', 'Overcast', 'Rainy', 'Sunny', 'Rainy'],
-    'TimeOfDay': ['Morning', 'Morning', 'Afternoon', 'Afternoon', 'Evening', 'Morning', 'Morning', 'Afternoon',
-                  'Evening', 'Morning'],
-    'SleepQuality': ['Poor', 'Good', 'Poor', 'Good', 'Poor', 'Good', 'Poor', 'Good', 'Good', 'Poor'],
-    'Mood': ['Tired', 'Fresh', 'Tired', 'Energetic', 'Tired', 'Fresh', 'Tired', 'Tired', 'Energetic', 'Tired'],
-    'BuyCoffee': ['Yes', 'No', 'Yes', 'No', 'Yes', 'No', 'Yes', 'Yes', 'No', 'Yes']
+st.header("👤 Collaborative Filtering (User-Based)")
+user_ids = user_item_matrix.index.tolist()
+selected_user = st.selectbox("Choose a User ID", user_ids)
 
-}
-df = pd.DataFrame(data)
-#Encode
-df_encoded = df.copy()
-label_encoder = {}
-for column in df.columns:
-    if df [column].dtype == "object":
-        le = LabelEncoder()
-        df_encoded[column] = le.fit_transform(df[column])
-        label_encoder[column] = le
+if st.button("Recommend", key="cf_recommend"):
+    # Get ratings from similar users
+    sim_users = user_similarity_df.loc[selected_user].sort_values(ascending=False)[1:4].index
+        sim_ratings = user_item_matrix.loc[sim_users].mean().sort_values(ascending=False)
 
-#Feature and target
-X = df_encoded.drop("BuyCoffee", axis = 1)
-y = df_encoded["BuyCoffee"]
+        # Recommend unrated books
+        user_rated_books = user_item_matrix.loc[selected_user][user_item_matrix.loc[selected_user] > 0].index
+        recommendations = sim_ratings.drop(user_rated_books).head(3)
 
-#train decision tree
-
-model = DecisionTreeClassifier(criterion = "entropy")
-model.fit(X,y)
-#Visualization with Matplotlib
-plt.figure(figsize = (12,6))
-plot_tree(model, feature_names = X.columns, class_names = label_encoder["BuyCoffee"].classes_, filled= True)
-plt.show()
-st.title("BuyCoffee Prediction with ID3 Decision Tree")
-
-
-def user_input():
-    weather = st.sidebar.selectbox("Weather", df['Weather'].unique())
-    TimeOfDay = st.sidebar.selectbox("TimeOfDay", df['TimeOfDay'].unique())
-    SleepQuality = st.sidebar.selectbox("SleepQuality", df['SleepQuality'].unique())
-    Mood = st.sidebar.selectbox("Mood", df['Mood'].unique())
-
-    return pd.DataFrame([[weather, TimeOfDay, SleepQuality, Mood]],
-                        columns=['Weather', 'TimeOfDay', 'SleepQuality', 'Mood'])
-
-
-input_df = user_input()
-
-#Encode input
-input_encoded = input_df.copy()
-for col in input_encoded.columns:
-    input_encoded[col] = label_encoder[col].transform(input_encoded[col])
-# Prediction
-prediction = model.predict(input_encoded)[0]
-prediction_label = label_encoder['BuyCoffee'].inverse_transform([prediction])[0]
-st.subheader("Prediction:")
-st.success(f"The model predicts: {prediction_label}")
-st.subheader("Input Values:")
-st.write(input_df)
-st.subheader("Training Data:")
-st.dataframe(df)
+        st.write("### Recommended Books:")
+        for book_id in recommendations.index:
+            title = books[books['Book_ID'] == book_id]['Title'].values[0]
+            st.write("- " + title)
